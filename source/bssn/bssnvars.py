@@ -1,10 +1,12 @@
-import numpy as np
+import jax.numpy as jnp
 
 from core.statevector import *
 from backgrounds.sphericalbackground import *
 
-# These classes just allow us to hold all the metric and derivative quantities in a nice packaged form
-# and map the non trivial components into full vector and tensor forms
+
+# These classes just allow us to hold all the metric and derivative quantities
+# in a nice packaged form and map the non trivial components into full vector
+# and tensor forms
 
 class BSSNVars:
     """
@@ -13,15 +15,15 @@ class BSSNVars:
     def __init__(self, N):
 
         self.N = N
-        self.h_LL = np.zeros([N, SPACEDIM, SPACEDIM])
-        self.a_LL = np.zeros([N, SPACEDIM, SPACEDIM])
-        self.lambda_U = np.zeros([N, SPACEDIM])
-        self.shift_U = np.zeros([N, SPACEDIM])
-        self.b_U = np.zeros([N, SPACEDIM])
-        self.lapse = np.zeros([N])
-        self.phi = np.zeros([N])
-        self.K = np.zeros([N])
-        
+        self.h_LL = jnp.zeros([N, SPACEDIM, SPACEDIM])
+        self.a_LL = jnp.zeros([N, SPACEDIM, SPACEDIM])
+        self.lambda_U = jnp.zeros([N, SPACEDIM])
+        self.shift_U = jnp.zeros([N, SPACEDIM])
+        self.b_U = jnp.zeros([N, SPACEDIM])
+        self.lapse = jnp.zeros([N])
+        self.phi = jnp.zeros([N])
+        self.K = jnp.zeros([N])
+
     def set_bssn_vars(self, state):
         """
         Populate the bssn vars from the full state
@@ -29,88 +31,77 @@ class BSSNVars:
 
         # Unpack variables from current_state - see statevector.py
         # Assumes BSSN vars are first, which they should be
-        (phi, hrr, htt, hpp, K, arr, att, app, lambdar, shiftr, br, lapse) = state[0 : NUM_BSSN_VARS]
+        (phi, hrr, htt, hpp, K, arr, att, app, lambdar,
+         shiftr, br, lapse) = state[0:NUM_BSSN_VARS]
 
-        self.h_LL[:,i_r,i_r] = hrr
-        self.h_LL[:,i_t,i_t] = htt
-        self.h_LL[:,i_p,i_p] = hpp
-        
-        self.a_LL[:,i_r,i_r] = arr
-        self.a_LL[:,i_t,i_t] = att
-        self.a_LL[:,i_p,i_p] = app
-        
-        self.lambda_U[:,i_r] = lambdar            
-        self.shift_U[:,i_r] = shiftr
-        self.b_U[:,i_r] = br
+        self.h_LL = self.h_LL.at[:, i_r, i_r].set(hrr)
+        self.h_LL = self.h_LL.at[:, i_t, i_t].set(htt)
+        self.h_LL = self.h_LL.at[:, i_p, i_p].set(hpp)
 
-        self.lapse[:] = lapse
-        self.phi[:] = phi     
-        self.K[:] = K
+        self.a_LL = self.a_LL.at[:, i_r, i_r].set(arr)
+        self.a_LL = self.a_LL.at[:, i_t, i_t].set(att)
+        self.a_LL = self.a_LL.at[:, i_p, i_p].set(app)
+
+        self.lambda_U = self.lambda_U.at[:, i_r].set(lambdar)
+        self.shift_U = self.shift_U.at[:, i_r].set(shiftr)
+        self.b_U = self.b_U.at[:, i_r].set(br)
+
+        self.lapse = self.lapse.at[:].set(lapse)
+        self.phi = self.phi.at[:].set(phi)
+        self.K = self.K.at[:].set(K)
 
     def set_bssn_state_vars(self):
         """
         Populate the state vector from the bssn vars values
         """
-        
-        bssn_state = np.zeros(self.N * NUM_BSSN_VARS)
+
+        bssn_state = jnp.zeros(self.N * NUM_BSSN_VARS)
         bssn_state = bssn_state.reshape(NUM_BSSN_VARS, -1)
-        
-        # assign parts of the state vector to the different vars
-        (
-            state_phi,
-            state_hrr,
-            state_htt,
-            state_hpp,
-            state_K,
-            state_arr,
-            state_att,
-            state_app,
-            state_lambdar,
-            state_shiftr,
-            state_br,
-            state_lapse
-        ) = bssn_state
-        
-        state_phi[:] = self.phi
-        state_hrr[:] = self.h_LL[:,i_r,i_r]
-        state_htt[:] = self.h_LL[:,i_t,i_t]
-        state_hpp[:] = self.h_LL[:,i_p,i_p]
-        state_K[:] = self.K
-        state_arr[:] = self.a_LL[:,i_r,i_r]
-        state_att[:] = self.a_LL[:,i_t,i_t]
-        state_app[:] = self.a_LL[:,i_p,i_p]
-        state_lambdar[:] = self.lambda_U[:,i_r]
-        state_shiftr[:] = self.shift_U[:,i_r]
-        state_br[:] = self.b_U[:,i_r]
-        state_lapse[:] = self.lapse
-        
+
+        # Assign parts of the state vector to the different vars
+        bssn_state = bssn_state.at[0].set(self.phi)
+        bssn_state = bssn_state.at[1].set(self.h_LL[:, i_r, i_r])
+        bssn_state = bssn_state.at[2].set(self.h_LL[:, i_t, i_t])
+        bssn_state = bssn_state.at[3].set(self.h_LL[:, i_p, i_p])
+        bssn_state = bssn_state.at[4].set(self.K)
+        bssn_state = bssn_state.at[5].set(self.a_LL[:, i_r, i_r])
+        bssn_state = bssn_state.at[6].set(self.a_LL[:, i_t, i_t])
+        bssn_state = bssn_state.at[7].set(self.a_LL[:, i_p, i_p])
+        bssn_state = bssn_state.at[8].set(self.lambda_U[:, i_r])
+        bssn_state = bssn_state.at[9].set(self.shift_U[:, i_r])
+        bssn_state = bssn_state.at[10].set(self.b_U[:, i_r])
+        bssn_state = bssn_state.at[11].set(self.lapse)
+
         return bssn_state
-        
-        
+
+
 class BSSNFirstDerivs:
     """
-    Holder for the BSSN d1 quantities in tensor form, last indices are the derivative ones by convention
+    Holder for the BSSN d1 quantities in tensor form, last indices are the
+    derivative ones by convention
     """
     def __init__(self, N):
-        
-        self.first_derivative_indices = [idx_phi, idx_hrr, idx_htt, idx_hpp, idx_K, idx_arr, idx_att, idx_app, 
-                                         idx_lambdar, idx_shiftr, idx_lapse]
 
-        self.h_LL = np.zeros([N, SPACEDIM, SPACEDIM, SPACEDIM])
-        self.a_LL = np.zeros([N, SPACEDIM, SPACEDIM, SPACEDIM])
-        self.shift_U = np.zeros([N, SPACEDIM, SPACEDIM])
-        self.lambda_U = np.zeros([N, SPACEDIM, SPACEDIM])
-        self.phi = np.zeros([N, SPACEDIM])
-        self.K = np.zeros([N, SPACEDIM])
-        self.lapse = np.zeros([N, SPACEDIM])
+        self.first_derivative_indices = jnp.array([
+            idx_phi, idx_hrr, idx_htt, idx_hpp, idx_K, idx_arr, idx_att,
+            idx_app, idx_lambdar, idx_shiftr, idx_lapse
+        ])
 
-        
+        self.h_LL = jnp.zeros([N, SPACEDIM, SPACEDIM, SPACEDIM])
+        self.a_LL = jnp.zeros([N, SPACEDIM, SPACEDIM, SPACEDIM])
+        self.shift_U = jnp.zeros([N, SPACEDIM, SPACEDIM])
+        self.lambda_U = jnp.zeros([N, SPACEDIM, SPACEDIM])
+        self.phi = jnp.zeros([N, SPACEDIM])
+        self.K = jnp.zeros([N, SPACEDIM])
+        self.lapse = jnp.zeros([N, SPACEDIM])
+
     def set_bssn_first_derivs(self, dstate_dr):
         """
         Populate the bssn vars from the variable derivs
         """
 
-        (   dphi_dr,
+        (
+            dphi_dr,
             dhrr_dr,
             dhtt_dr,
             dhpp_dr,
@@ -121,43 +112,45 @@ class BSSNFirstDerivs:
             dlambdar_dr,
             dshiftr_dr,
             dlapse_dr,
-        ) = dstate_dr[self.first_derivative_indices]        
-        
-        self.h_LL[:,i_r,i_r,i_r] = dhrr_dr
-        self.h_LL[:,i_t,i_t,i_r] = dhtt_dr
-        self.h_LL[:,i_p,i_p,i_r] = dhpp_dr
+        ) = dstate_dr[self.first_derivative_indices]
 
-        self.a_LL[:,i_r,i_r,i_r] = darr_dr
-        self.a_LL[:,i_t,i_t,i_r] = datt_dr
-        self.a_LL[:,i_p,i_p,i_r] = dapp_dr        
+        self.h_LL = self.h_LL.at[:, i_r, i_r, i_r].set(dhrr_dr)
+        self.h_LL = self.h_LL.at[:, i_t, i_t, i_r].set(dhtt_dr)
+        self.h_LL = self.h_LL.at[:, i_p, i_p, i_r].set(dhpp_dr)
 
-        
-        self.shift_U[:,i_r,i_r] = dshiftr_dr 
-        self.lambda_U[:,i_r,i_r] = dlambdar_dr
-        
-        self.phi[:,i_r] = dphi_dr
-        self.K[:,i_r] = dK_dr
-        self.lapse[:,i_r] = dlapse_dr
+        self.a_LL = self.a_LL.at[:, i_r, i_r, i_r].set(darr_dr)
+        self.a_LL = self.a_LL.at[:, i_t, i_t, i_r].set(datt_dr)
+        self.a_LL = self.a_LL.at[:, i_p, i_p, i_r].set(dapp_dr)
+
+        self.shift_U = self.shift_U.at[:, i_r, i_r].set(dshiftr_dr)
+        self.lambda_U = self.lambda_U.at[:, i_r, i_r].set(dlambdar_dr)
+
+        self.phi = self.phi.at[:, i_r].set(dphi_dr)
+        self.K = self.K.at[:, i_r].set(dK_dr)
+        self.lapse = self.lapse.at[:, i_r].set(dlapse_dr)
 
 
 class BSSNSecondDerivs:
     """
-    Holder for the BSSN d2 quantities in tensor form, last indices are the derivative ones by convention
+    Holder for the BSSN d2 quantities in tensor form, last indices are the
+    derivative ones by convention
     """
     def __init__(self, N):
-        
-        self.second_derivative_indices = [idx_phi, idx_hrr, idx_htt, idx_hpp, idx_shiftr, idx_lapse]
 
-        self.h_LL = np.zeros([N, SPACEDIM, SPACEDIM, SPACEDIM, SPACEDIM])
-        self.shift_U = np.zeros([N, SPACEDIM, SPACEDIM, SPACEDIM])
-        self.phi = np.zeros([N, SPACEDIM, SPACEDIM])
-        self.lapse = np.zeros([N, SPACEDIM, SPACEDIM])
-        
+        self.second_derivative_indices = jnp.array([
+            idx_phi, idx_hrr, idx_htt, idx_hpp, idx_shiftr, idx_lapse
+        ])
+
+        self.h_LL = jnp.zeros([N, SPACEDIM, SPACEDIM, SPACEDIM, SPACEDIM])
+        self.shift_U = jnp.zeros([N, SPACEDIM, SPACEDIM, SPACEDIM])
+        self.phi = jnp.zeros([N, SPACEDIM, SPACEDIM])
+        self.lapse = jnp.zeros([N, SPACEDIM, SPACEDIM])
+
     def set_bssn_second_derivs(self, d2state_dr2):
         """
         Populate the bssn vars from the variable derivs
         """
-        
+
         (
             d2phi_dr2,
             d2hrr_dr2,
@@ -167,35 +160,39 @@ class BSSNSecondDerivs:
             d2lapse_dr2,
         ) = d2state_dr2[self.second_derivative_indices]
 
-        self.h_LL[:,i_r,i_r,i_r,i_r]  = d2hrr_dr2
-        self.h_LL[:,i_t,i_t,i_r,i_r]  = d2htt_dr2
-        self.h_LL[:,i_p,i_p,i_r,i_r]  = d2hpp_dr2  
-        
-        self.shift_U[:,i_r,i_r,i_r] = d2shiftr_dr2
-        
-        self.phi[:,i_r,i_r] = d2phi_dr2
-        self.lapse[:,i_r,i_r] = d2lapse_dr2
+        self.h_LL = self.h_LL.at[:, i_r, i_r, i_r, i_r].set(d2hrr_dr2)
+        self.h_LL = self.h_LL.at[:, i_t, i_t, i_r, i_r].set(d2htt_dr2)
+        self.h_LL = self.h_LL.at[:, i_p, i_p, i_r, i_r].set(d2hpp_dr2)
+
+        self.shift_U = self.shift_U.at[:, i_r, i_r, i_r].set(d2shiftr_dr2)
+
+        self.phi = self.phi.at[:, i_r, i_r].set(d2phi_dr2)
+        self.lapse = self.lapse.at[:, i_r, i_r].set(d2lapse_dr2)
+
 
 class BSSNAdvecDerivs:
     """
-    Holder for the BSSN d1 advec quantities in tensor form, last indices are the derivative ones by convention
+    Holder for the BSSN d1 advec quantities in tensor form, last indices are
+    the derivative ones by convention
     """
     def __init__(self, N):
-        
-        self.advec_indices = [idx_phi, idx_hrr, idx_htt, idx_hpp, 
-                              idx_arr, idx_att, idx_app, idx_K, idx_lambdar, idx_lapse]
 
-        self.h_LL = np.zeros([N, SPACEDIM, SPACEDIM, SPACEDIM])
-        self.a_LL = np.zeros([N, SPACEDIM, SPACEDIM, SPACEDIM])
-        self.lambda_U = np.zeros([N, SPACEDIM, SPACEDIM])
-        self.shift_U = np.zeros([N, SPACEDIM, SPACEDIM])
-        self.phi = np.zeros([N, SPACEDIM])
-        self.K = np.zeros([N, SPACEDIM])
-        self.lapse = np.zeros([N, SPACEDIM])
-        
-        #temp
-        self.u = np.zeros([N, SPACEDIM])
-        
+        self.advec_indices = jnp.array([
+            idx_phi, idx_hrr, idx_htt, idx_hpp, idx_arr, idx_att, idx_app,
+            idx_K, idx_lambdar, idx_lapse
+        ])
+
+        self.h_LL = jnp.zeros([N, SPACEDIM, SPACEDIM, SPACEDIM])
+        self.a_LL = jnp.zeros([N, SPACEDIM, SPACEDIM, SPACEDIM])
+        self.lambda_U = jnp.zeros([N, SPACEDIM, SPACEDIM])
+        self.shift_U = jnp.zeros([N, SPACEDIM, SPACEDIM])
+        self.phi = jnp.zeros([N, SPACEDIM])
+        self.K = jnp.zeros([N, SPACEDIM])
+        self.lapse = jnp.zeros([N, SPACEDIM])
+
+        # temp
+        self.u = jnp.zeros([N, SPACEDIM])
+
     def set_bssn_advec_derivs(self, dstate_dr_advec):
         """
         Populate the bssn vars from the variable derivs
@@ -212,18 +209,18 @@ class BSSNAdvecDerivs:
             dK_dr_advec,
             dlambdar_dr_advec,
             dlapse_dr_advec,
-        ) = dstate_dr_advec[self.advec_indices]      
-        
-        self.h_LL[:,i_r,i_r,i_r] = dhrr_dr_advec
-        self.h_LL[:,i_t,i_t,i_r] = dhtt_dr_advec
-        self.h_LL[:,i_p,i_p,i_r] = dhpp_dr_advec
-        
-        self.a_LL[:,i_r,i_r,i_r] = darr_dr_advec
-        self.a_LL[:,i_t,i_t,i_r] = datt_dr_advec
-        self.a_LL[:,i_p,i_p,i_r] = dapp_dr_advec        
-        
-        self.lambda_U[:,i_r,i_r] = dlambdar_dr_advec
-        
-        self.phi[:,i_r] = dphi_dr_advec
-        self.K[:,i_r] = dK_dr_advec
-        self.lapse[:,i_r] = dlapse_dr_advec
+        ) = dstate_dr_advec[self.advec_indices]
+
+        self.h_LL = self.h_LL.at[:, i_r, i_r, i_r].set(dhrr_dr_advec)
+        self.h_LL = self.h_LL.at[:, i_t, i_t, i_r].set(dhtt_dr_advec)
+        self.h_LL = self.h_LL.at[:, i_p, i_p, i_r].set(dhpp_dr_advec)
+
+        self.a_LL = self.a_LL.at[:, i_r, i_r, i_r].set(darr_dr_advec)
+        self.a_LL = self.a_LL.at[:, i_t, i_t, i_r].set(datt_dr_advec)
+        self.a_LL = self.a_LL.at[:, i_p, i_p, i_r].set(dapp_dr_advec)
+
+        self.lambda_U = self.lambda_U.at[:, i_r, i_r].set(dlambdar_dr_advec)
+
+        self.phi = self.phi.at[:, i_r].set(dphi_dr_advec)
+        self.K = self.K.at[:, i_r].set(dK_dr_advec)
+        self.lapse = self.lapse.at[:, i_r].set(dlapse_dr_advec)

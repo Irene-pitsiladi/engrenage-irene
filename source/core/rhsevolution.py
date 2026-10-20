@@ -2,6 +2,8 @@
 
 # python modules
 import numpy as np
+import jax
+import jax.numpy as jnp
 import time
 
 # homemade source code
@@ -12,7 +14,7 @@ from bssn.bssnvars import BSSNVars
 
 # function that returns the rhs for each of the field vars
 # see further details in https://github.com/GRChombo/engrenage/wiki/Useful-code-background
-def get_rhs(t_i, current_state: np.ndarray, grid: Grid, background, matter, progress_bar, time_state) :
+def get_rhs(t_i, current_state: jax.Array, grid: Grid, background, matter):
 
     # Set to True/False for timing and tracking progress
     # This is best tested using the BH test, where only one timestep is run
@@ -57,21 +59,19 @@ def get_rhs(t_i, current_state: np.ndarray, grid: Grid, background, matter, prog
     # work out the ratio between the bar determinant and what it should be
     determinant_bar_gamma = get_det_bar_gamma(r, bssn_vars.h_LL, background)
     determinant_hat_gamma = background.det_hat_gamma
-    rescaling_factor = np.power(determinant_bar_gamma / determinant_hat_gamma, -1./3)
+    rescaling_factor = jnp.power(determinant_bar_gamma / determinant_hat_gamma, -1./3)
     
     # Check it is set correctly at first timestep
-    error = np.abs(rescaling_factor - 1.0)
-    if ((error > 1e-8).any() and (t_i == 0.0)) :
-        print("error in rescaling factor is ", error)
-        assert False, "Warning, initial det(hat gamma) != det(bar gamma), check your initial data."
+    error = jnp.abs(rescaling_factor - 1.0)
+
 
     # Now enforce it
     bar_gamma_LL = get_bar_gamma_LL(r, bssn_vars.h_LL, background)
-    new_bar_gamma_LL = rescaling_factor[:,np.newaxis,np.newaxis] * bar_gamma_LL
+    new_bar_gamma_LL = rescaling_factor[:,jnp.newaxis,jnp.newaxis] * bar_gamma_LL
     bssn_vars.h_LL = (new_bar_gamma_LL - background.hat_gamma_LL) * background.inverse_scaling_matrix
         
     # Also limit the conformal factor so it doesn't blow up near BHs
-    bssn_vars.phi = np.minimum(bssn_vars.phi, np.ones(N)*1.0e6)
+    bssn_vars.phi = jnp.minimum(bssn_vars.phi, jnp.ones(N)*1.0e6)
 
     if (timing_on) :    
         check_time_2 = time.time()
@@ -106,8 +106,8 @@ def get_rhs(t_i, current_state: np.ndarray, grid: Grid, background, matter, prog
     # Note the additional advection terms from rescaling
     
     # Scalars first
-    bssn_rhs.phi += np.einsum('xj,xj->x', background.inverse_scaling_vector * bssn_vars.shift_U,   advec.phi)
-    bssn_rhs.K   += np.einsum('xj,xj->x', background.inverse_scaling_vector * bssn_vars.shift_U,   advec.K)
+    bssn_rhs.phi += jnp.einsum('xj,xj->x', background.inverse_scaling_vector * bssn_vars.shift_U,   advec.phi)
+    bssn_rhs.K   += jnp.einsum('xj,xj->x', background.inverse_scaling_vector * bssn_vars.shift_U,   advec.K)
 
     # Vectors
     advec_lambda_U = get_vector_advection(r, bssn_vars.lambda_U, advec.lambda_U, bssn_vars.shift_U, d1.shift_U, background)
@@ -123,8 +123,9 @@ def get_rhs(t_i, current_state: np.ndarray, grid: Grid, background, matter, prog
     # Convert the tensorial forms back into the state variables, not yet flattened
     bssn_rhs_state = bssn_rhs.set_bssn_state_vars()
     
-    if (matter_rhs != None) :
-        rhs_state = np.concatenate([bssn_rhs_state, matter_rhs])
+    if matter_rhs is not None:
+        matter_rhs=jnp.stack(matter_rhs) #combines the two arrays into one
+        rhs_state = jnp.concatenate([bssn_rhs_state, matter_rhs],axis=0)
     else :
         rhs_state = bssn_rhs_state
 
@@ -139,10 +140,10 @@ def get_rhs(t_i, current_state: np.ndarray, grid: Grid, background, matter, prog
     # max sigma ~ dx / dt so dt max = dx / sigma. 
     # Since dt < 0.5 dx_min for stability anyway we can usually quite safely pick sigma = 1.0
     # but it seems to work best when weighted by the lapse and conformal factor too
-    sigma = 1.0 * bssn_vars.lapse * np.exp(-2.0*bssn_vars.phi)
+    sigma = 1.0 * bssn_vars.lapse * jnp.exp(-2.0*bssn_vars.phi)
     
     diss = sigma * grid.get_kreiss_oliger_diss(unflattened_state)
-    rhs_state += diss 
+    rhs_state = rhs_state + diss 
     
     if (timing_on) :    
         check_time_5 = time.time()
@@ -152,34 +153,16 @@ def get_rhs(t_i, current_state: np.ndarray, grid: Grid, background, matter, prog
     # Impose boundary conditions
     
     # overwrite outer boundaries with extrapolation (order specified in uservariables.py)
-    grid.fill_outer_boundary(rhs_state)
+    rhs_state=grid.fill_outer_boundary(rhs_state)
 
     # overwrite inner cells using parity under r -> - r
-    grid.fill_inner_boundary(rhs_state)
+    rhs_state=grid.fill_inner_boundary(rhs_state)
 
     if (timing_on) :    
         check_time_6 = time.time()
         print("time for boundaries is, ", check_time_6-check_time_5)    
     
-    #################################################################################################### 
-    # Some code for checking timing and progress output
-    
-    # state is a list containing last updated time t:
-    # state = [last_t, dt for progress bar]
-    # its values can be carried between function calls throughout the ODE integration
-    last_t, deltat = time_state
-    
-    # call update(n) here where n = (t - last_t) / dt
-    n = int((t_i - last_t)/deltat)
-    progress_bar.update(n)
-    # we need this to take into account that n is a rounded number:
-    time_state[0] = last_t + deltat * n 
 
-    if (timing_on) :    
-        end_time = time.time()
-        print("total rhs time at t= ", t_i, " is, ", end_time-start_time)
-        
-    #################################################################################################### 
     # Finally return the rhs, flattened into one long vector
     
     return rhs_state.reshape(-1)

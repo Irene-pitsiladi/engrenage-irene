@@ -1,4 +1,5 @@
-import numpy as np
+import jax
+import jax.numpy as jnp
 
 from core.derivatives import Derivatives
 from core.spacing import Spacing, NUM_GHOSTS, SpacingExtent
@@ -15,7 +16,7 @@ class Grid:
     """Represents the grid used in the evolution of the state."""
 
     def __init__(self, spacing: Spacing, a_state_vector : StateVector):
-        self.r, self.dr_dx = spacing[[0, 1]]
+        self.r, self.dr_dx = spacing[jnp.array([0, 1])]
         self.N = self.r.size
         self.dr = spacing.dx * self.dr_dx
         self.derivs = Derivatives(spacing)
@@ -23,19 +24,22 @@ class Grid:
         self.num_points = self.r.size
         self.min_dr = spacing.min_dr
         self.NUM_VARS = a_state_vector.NUM_VARS
-        self.PARITY = a_state_vector.PARITY
-        self.ASYMP_OFFSET = a_state_vector.ASYMP_OFFSET
-        self.ASYMP_POWER = a_state_vector.ASYMP_POWER
-        self.ALL_INDICES = np.arange(self.NUM_VARS, dtype=np.uint8)
+        self.PARITY = jnp.asarray(a_state_vector.PARITY)
+        self.ASYMP_OFFSET = jnp.asarray(a_state_vector.ASYMP_OFFSET)
+        self.ASYMP_POWER = jnp.asarray(a_state_vector.ASYMP_POWER)
+        self.ALL_INDICES = jnp.arange(self.NUM_VARS, dtype=jnp.int32)
 
     def fill_boundaries(self, state, indices=None):
         
         # Default to all indices if none were specified
-        if (indices == None) :
+        if indices is None:
             indices = self.ALL_INDICES
-        
-        self.fill_inner_boundary(state, indices)
-        self.fill_outer_boundary(state, indices)
+        else:
+            indices=jnp.asarray(indices)
+        state=self.fill_inner_boundary(state, indices)
+        state=self.fill_outer_boundary(state, indices)
+
+        return state
 
     def fill_inner_boundary(self, state, indices=None):
         
@@ -45,18 +49,20 @@ class Grid:
         """
 
         # Default to all indices if none were specified
-        if (indices == None) :
+        if indices is None:
             indices = self.ALL_INDICES
+        else: indices=jnp.asarray(indices)
         
         if self.extent == SpacingExtent.HALF:
             # If the r coordinate is positive, fill inner boundary with parity.
-            state[indices, :NUM_GHOSTS] = (
+            state=state.at[indices, :NUM_GHOSTS].set (
                 self.PARITY[indices, None]
                 * state[indices, 2 * NUM_GHOSTS - 1: NUM_GHOSTS - 1: -1]
             )
         else:
             # If the r coordinate goes from -r_max to r_max, fill the inner boundary like the outer one.
-            self.fill_outer_boundary(state[..., ::-1], indices)
+            state=self.fill_outer_boundary(state[..., ::-1], indices)[..., ::-1]
+        return state
 
     def fill_inner_boundary_single_variable(self, state, parity=1):
         """Fill the inner boundary of the grid.
@@ -66,10 +72,11 @@ class Grid:
         """
         if self.extent == SpacingExtent.HALF:
             # If the r coordinate is positive, fill inner boundary with parity.
-            state[:NUM_GHOSTS] = parity * state[2 * NUM_GHOSTS - 1: NUM_GHOSTS - 1: -1]
+            state= state.at[:NUM_GHOSTS].set( parity * state[2 * NUM_GHOSTS - 1: NUM_GHOSTS - 1: -1])
         else:
             # If the r coordinate goes from -r_max to r_max, fill the inner boundary like the outer one.
-            self.fill_outer_boundary_single_variable(state[::-1])
+            state=self.fill_outer_boundary_single_variable(state[::-1])[::-1]
+        return state
             
     def fill_outer_boundary(self, state, indices=None):
         # For outer boundaries, we assume a law of the form: a + b * r**n
@@ -77,55 +84,77 @@ class Grid:
         # on last point before ghost points.
 
         # Default to all indices if none were specified
-        if (indices == None) :
-            indices = self.ALL_INDICES        
+        if indices is None :
+            indices = self.ALL_INDICES    
+        else: indices=jnp.asarray(indices)    
         
         idx = -NUM_GHOSTS - 1
-        outer_state = state[:, -NUM_GHOSTS:]
+        
         b = (state[indices, idx] - self.ASYMP_OFFSET[indices]) / self.r[idx] ** self.ASYMP_POWER[indices]
 
-        outer_state[indices, -NUM_GHOSTS:] = (
+        state=state.at[indices, -NUM_GHOSTS:].set(
             self.ASYMP_OFFSET[indices, None]
             + b[..., None] * self.r[-NUM_GHOSTS:] ** self.ASYMP_POWER[indices, None]
         )
+        return state
 
     def fill_outer_boundary_single_variable(self, state, asymp_power=0, asymp_offset=0):
         # For outer boundaries, we assume a law of the form: a + b * r**n
         # "a" is ASYMP_OFFSET and "n" is ASYMP_POWER, "b" is to be determined
         # on last point before ghost points.
         idx = -NUM_GHOSTS - 1
-        outer_state = state[:, -NUM_GHOSTS:]
+        
         b = (state[idx] - asymp_offset) / self.r[idx] ** asymp_power
 
-        outer_state[-NUM_GHOSTS:] = asymp_offset + b * self.r[-NUM_GHOSTS:] ** asymp_power
-        
-    def get_first_derivative(self, array: np.ndarray, indices=None):
+        state=state.at[-NUM_GHOSTS:].set(asymp_offset + b * self.r[-NUM_GHOSTS:] ** asymp_power)
+        return state
+
+    def get_first_derivative(self, array: jax.Array, indices=None):
         """Compute the first derivative of an array for the specified indices."""
-        dr_array = np.zeros_like(array)
-        dr_array[indices] = array[indices] @ self.derivs.drn_matrix[1].T
+        if indices is None:
+            indices = self.ALL_INDICES
+        else:
+            indices = jnp.asarray(indices)
+
+        dr_array = jnp.zeros_like(array)
+        dr_array=dr_array.at[indices].set(array[indices] @ self.derivs.drn_matrix[1].T)
         return dr_array / self.dr
 
-    def get_second_derivative(self, array: np.ndarray, indices=None):
+    def get_second_derivative(self, array: jax.Array, indices=None):
         """Compute the second derivative of an array for the specified indices."""
-        dr2_array = np.zeros_like(array)
-        dr2_array[indices] = array[indices] @ self.derivs.drn_matrix[2].T
+        if indices is None:
+            indices = self.ALL_INDICES
+        else:
+            indices = jnp.asarray(indices)
+
+        dr2_array = jnp.zeros_like(array)
+        dr2_array=dr2_array.at[indices].set(array[indices] @ self.derivs.drn_matrix[2].T)
         return dr2_array / self.dr**2
 
-    def get_advection(self, array: np.ndarray, direction: np.ndarray, indices=None):
+    def get_advection(self, array: jax.Array, direction: jax.Array, indices=None):
         """Compute the advection of an array along a direction for the specified indices."""
+        if indices is None:
+            indices = self.ALL_INDICES
+        else:
+            indices = jnp.asarray(indices)
 
         # Direction of advection is given by direction array.
         # True or 1 is right advection and False or 0 is left advection.
         advec_matrix = self.derivs.advec_x_matrix[direction.astype(int), np.arange(direction.size)]
-        advec_array = np.zeros_like(array)
-        advec_array[indices] = array[indices] @ advec_matrix.T / self.dr
+        advec_array = jnp.zeros_like(array)
+        advec_array=advec_array.at[indices].set(array[indices] @ advec_matrix.T / self.dr)
         return advec_array
 
-    def get_kreiss_oliger_diss(self, state: np.ndarray, indices=None):
+    def get_kreiss_oliger_diss(self, state: jax.Array, indices=None):
         # Compute the second derivative of the ivars in argument
-        diss_state = np.zeros_like(state)
+        if indices is None:
+            indices = self.ALL_INDICES
+        else:
+            indices = jnp.asarray(indices)
+
+        diss_state = jnp.zeros_like(state)
         # Consider trying dxn matrix here to simplify this
-        diss_state[indices] = state[indices] @ self.derivs.drn_matrix[6].T
+        diss_state=diss_state.at[indices].set(state[indices] @ self.derivs.drn_matrix[6].T)
         return diss_state / (2 ** 6 * self.dr)
     
     # This is a helper method that returns the first derivatives needed for BSSN 
