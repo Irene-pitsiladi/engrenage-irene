@@ -1,7 +1,7 @@
 # bssnrhs.py
 # as in Etienne https://arxiv.org/abs/1712.07658v2
 # see also Baumgarte https://arxiv.org/abs/1211.6632 for the eqns with matter
-
+import jax
 import jax.numpy as jnp
 from bssn.tensoralgebra import *
 
@@ -133,7 +133,52 @@ def get_bssn_rhs(bssn_rhs, r, bssn_vars, d1, d2, background, emtensor) :
              + em4phi[:,jnp.newaxis,jnp.newaxis] * (dadt_TF_part
                                                   - one_third * trace * r_bar_gamma_LL))
 
-    bssn_rhs.a_LL = dadt    
+    bssn_rhs.a_LL = dadt  
+    #####################################################################################################
+   #  k = 3  # first physical point (NUM_GHOSTS = 3)
+
+   #  advection_term = (
+   #    - two_thirds * bar_div_shift[k] * bssn_vars.a_LL[k, 0, 0]
+   # )
+   #  curvature_term = (
+   #    em4phi[k] * (
+   #       dadt_TF_part[k, 0, 0]
+   #       - one_third * trace[k, 0, 0] * r_bar_gamma_LL[k, 0, 0]
+   #    )
+   # )
+   #  tf_piece = em4phi[k] * dadt_TF_part[k, 0, 0]
+   #  trace_piece = -em4phi[k] * one_third * trace[k, 0, 0] * r_bar_gamma_LL[k, 0, 0]
+   #  extrinsic_curvature_term = (
+   #    bssn_vars.lapse[k] * (
+   #       -2.0 * r_AikAkj[k, 0, 0]
+   #       + bssn_vars.K[k] * bssn_vars.a_LL[k, 0, 0]
+   #    )
+   # )
+   #  phi_source = bssn_vars.lapse[k] * (
+   #      -2.0 * d2.phi[k, 0, 0]
+   #      + 4.0 * d1.phi[k, 0] ** 2
+   #      + 2.0 * bar_chris[k, 0, 0, 0] * d1.phi[k, 0]
+   #      + bar_Rij[k, 0, 0]
+   #      - eight_pi_G * emtensor.Sij[k, 0, 0]
+   #  )
+   #  lapse_source = (
+   #      -d2.lapse[k, 0, 0]
+   #      + bar_chris[k, 0, 0, 0] * d1.lapse[k, 0]
+   #      + 4.0 * d1.phi[k, 0] * d1.lapse[k, 0]
+   #  )
+   #  jax.debug.print(
+   #      "phi={phi:.6e}; exp(-4phi)={em4:.6e}; "
+   #      "phi-source={ps:.6e}; lapse-source={ls:.6e}; "
+   #      "rr-scale={scale:.6e}",
+   #      phi=bssn_vars.phi[k],
+   #      em4=em4phi[k],
+   #      ps=phi_source,
+   #      ls=lapse_source,
+   #      scale=background.inverse_scaling_matrix[k, 0, 0],
+   #  )
+   #  jax.debug.print("r, first 8 physical points: {}", r[3:11])
+   #  jax.debug.print("Ricci_rr, first 8 points: {}", bar_Rij[3:11, 0, 0])
+   #  jax.debug.print("phi, first 8 points: {}", bssn_vars.phi[3:11])
 
     ####################################################################################################    
     # lambda^i is the rescaled version of the constrained quantity \Lambda^i = \Delta^i
